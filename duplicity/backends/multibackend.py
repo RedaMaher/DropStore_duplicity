@@ -53,6 +53,7 @@ class MultiBackend(duplicity.backend.Backend):
         u'mode',
         u'onfail',
         u'subpath',
+        u'count'
     ])
 
     # the mode of operation to follow
@@ -61,6 +62,7 @@ class MultiBackend(duplicity.backend.Backend):
     __mode_allowedSet = frozenset([
         u'mirror',
         u'stripe',
+        u'redundent'
     ])
 
     # the write error handling logic
@@ -77,6 +79,8 @@ class MultiBackend(duplicity.backend.Backend):
     # will be appended to the url value
     __subpath = u''
 
+    # The count of redundent versions of each file (default is 1, like strip mode)
+    __count = 1
     # when we write in stripe mode, we "stripe" via a simple round-robin across
     # remote stores.  It's hard to get too much more sophisticated
     # since we can't rely on the backend to give us any useful meta
@@ -169,6 +173,9 @@ class MultiBackend(duplicity.backend.Backend):
         if u'subpath' in queryParams:
             self.__subpath = queryParams[u'subpath']
 
+        if u'count' in queryParams:
+            self.__count = int(queryParams[u'count'])
+
         try:
             with open(parsed_url.path) as f:
                 configs = json.load(f)
@@ -216,6 +223,11 @@ class MultiBackend(duplicity.backend.Backend):
             #         % (url, len(store_list)),
             #         log.INFO)
 
+        # Check that redundency count is not bigger than the number of backends in the config file (otherwise, we will store the same file twice on the same backend)
+        if self.__mode == u'redundent':
+            if self.__count > len(self.__stores):
+                raise BackendException(u"Multibackend: redundency count can not be more the number of backends.")
+
     def _eligible_stores(self, filename):
         if self.__affinities:
             matching_prefixes = [k for k in list(self.__affinities.keys()) if util.fsdecode(filename).startswith(k)]
@@ -238,6 +250,10 @@ class MultiBackend(duplicity.backend.Backend):
         if self.__mode == u'mirror':
             self.__write_cursor = 0
 
+        # Mirror mode always starts at zero
+        if self.__mode == u'redundent':
+            count = 0
+
         first = self.__write_cursor
         while True:
             store = stores[self.__write_cursor]
@@ -251,9 +267,15 @@ class MultiBackend(duplicity.backend.Backend):
                 store.put(source_path, remote_filename)
                 passed = True
                 self.__write_cursor = next
-                # No matter what, if we loop around, break this loop
-                if next == 0:
-                    break
+                # No matter what (except redundent mode exits when it writes until self.__count), if we loop around, break this loop
+                if self.__mode == u'redundent':
+                    count = count + 1
+                    if count == self.__count:
+                        break
+                else:
+                    if next == 0:
+                        break
+
                 # If in stripe mode, don't continue to the next
                 if self.__mode == u'stripe':
                     break
