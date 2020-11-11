@@ -32,6 +32,7 @@ import urllib.request  # pylint: disable=import-error
 import urllib.parse  # pylint: disable=import-error
 import urllib.error  # pylint: disable=import-error
 import json
+import random
 
 import duplicity.backend
 from duplicity.errors import BackendException
@@ -225,6 +226,7 @@ class MultiBackend(duplicity.backend.Backend):
 
         # Check that redundency count is not bigger than the number of backends in the config file (otherwise, we will store the same file twice on the same backend)
         if self.__mode == u'redundent':
+            self.__write_cursor = random.randrange(0, len(self.__stores))
             if self.__count > len(self.__stores):
                 raise BackendException(u"Multibackend: redundency count can not be more the number of backends.")
 
